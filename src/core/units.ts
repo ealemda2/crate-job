@@ -28,7 +28,7 @@ export function formatLengthAs(mm: number, unit: LengthUnit): string {
       return `${Math.floor(halves / 24)}' ${inchText(halves % 24)}`;
     }
     case "mm":
-      return `${Math.round(mm)} mm`;
+      return `${Math.round(mm).toLocaleString("en-US")} mm`;
     case "cm":
       return `${Math.round(mm) / 10} cm`;
   }

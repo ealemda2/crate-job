@@ -1,15 +1,26 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { floorPlan } from "../core/floorPlan";
 import type { DisplayUnits, Layout } from "../core/project";
-import { fitView, panBy, toPlanPoint, withAspect, zoomAt, type Viewport } from "../core/viewport";
+import {
+  centre,
+  fitView,
+  panByPixels,
+  scrollByPixels,
+  toPlanPoint,
+  wheelPixels,
+  wheelZoomFactor,
+  withAspect,
+  ZOOM_STEP,
+  zoomAt,
+  type PanelSize,
+  type Viewport,
+} from "../core/viewport";
 import { tokens } from "../design/tokens";
-
-const ZOOM_STEP = 1.25;
-/** How strongly a pinch (or Ctrl + scroll) zooms per pixel of wheel delta. */
-const PINCH_SENSITIVITY = 0.01;
 
 /** Safari's trackpad pinch: not in the TypeScript DOM lib. */
 type GestureEvent = Event & { scale: number; clientX: number; clientY: number };
+
+const WHEEL_MODES = ["pixel", "line", "page"] as const;
 
 /**
  * Top-down, true-to-scale floor view: interior outline, lanes as floor tape, nose and doors labelled.
@@ -18,11 +29,11 @@ type GestureEvent = Event & { scale: number; clientX: number; clientY: number };
 export function FloorView({ layout, units }: { layout: Layout; units: DisplayUnits }) {
   const plan = useMemo(() => floorPlan(layout, units), [layout, units]);
   const svgRef = useRef<SVGSVGElement>(null);
-  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const [size, setSize] = useState<PanelSize | null>(null);
   const [view, setView] = useState<Viewport | null>(null);
   const drag = useRef<{ pointerId: number; x: number; y: number } | null>(null);
 
-  const fit = (s: { width: number; height: number }) => setView(fitView(plan.outline, s.width / s.height, tokens.floor.marginMm));
+  const fitted = (s: PanelSize) => fitView(plan.outline, s.width / s.height, tokens.floor.marginMm);
 
   // Track the panel size; fit on first measure, then keep the current zoom when the panel changes shape.
   useLayoutEffect(() => {
@@ -32,7 +43,7 @@ export function FloorView({ layout, units }: { layout: Layout; units: DisplayUni
       const { width, height } = svg.getBoundingClientRect();
       if (width === 0 || height === 0) return;
       setSize({ width, height });
-      setView((v) => (v ? withAspect(v, width / height) : fitView(plan.outline, width / height, tokens.floor.marginMm)));
+      setView((v) => (v ? withAspect(v, width / height) : fitted({ width, height })));
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -51,11 +62,12 @@ export function FloorView({ layout, units }: { layout: Layout; units: DisplayUni
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const r = svg.getBoundingClientRect();
+      const mode = WHEEL_MODES[e.deltaMode] ?? "pixel";
+      const scroll = { x: wheelPixels(e.deltaX, mode, r.height), y: wheelPixels(e.deltaY, mode, r.height) };
       setView((v) => {
         if (!v) return v;
-        if (e.ctrlKey || e.metaKey) return zoomAt(v, Math.exp(-e.deltaY * PINCH_SENSITIVITY), pointAt(v, e.clientX, e.clientY));
-        const mmPerPx = v.width / r.width;
-        return panBy(v, e.deltaX * mmPerPx, e.deltaY * mmPerPx);
+        if (e.ctrlKey || e.metaKey) return zoomAt(v, wheelZoomFactor(scroll.y), pointAt(v, e.clientX, e.clientY));
+        return scrollByPixels(v, scroll, r);
       });
     };
     let lastScale = 1;
@@ -88,21 +100,23 @@ export function FloorView({ layout, units }: { layout: Layout; units: DisplayUni
   const onPointerMove = (e: ReactPointerEvent<SVGSVGElement>) => {
     const d = drag.current;
     if (!d || d.pointerId !== e.pointerId || !size) return;
-    const dx = e.clientX - d.x;
-    const dy = e.clientY - d.y;
+    const dragPx = { x: e.clientX - d.x, y: e.clientY - d.y };
     drag.current = { ...d, x: e.clientX, y: e.clientY };
-    setView((v) => (v ? panBy(v, (-dx * v.width) / size.width, (-dy * v.height) / size.height) : v));
+    setView((v) => (v ? panByPixels(v, dragPx, size) : v));
   };
   const endDrag = () => {
     drag.current = null;
   };
-  const zoomCentre = (factor: number) =>
-    setView((v) => (v ? zoomAt(v, factor, { x: v.x + v.width / 2, y: v.y + v.height / 2 }) : v));
+  const zoomCentre = (factor: number) => setView((v) => (v ? zoomAt(v, factor, centre(v)) : v));
 
+  // Labels stay the same size on screen at any zoom, so their sizes are pixels scaled into drawing millimetres.
   const mmPerPx = view && size ? view.width / size.width : 1;
   const font = tokens.floor.labelPx * mmPerPx;
   const gap = tokens.floor.labelGapPx * mmPerPx;
-  const { width: L, height: W } = plan.outline;
+  const { width: truckLength, height: truckWidth } = plan.outline;
+  const nose = { x: -gap, y: truckWidth / 2 };
+  const doors = { x: truckLength + gap, y: truckWidth / 2 };
+  const widthLabelAt = { x: doors.x + tokens.floor.labelStack * font, y: doors.y };
 
   const label = {
     fontFamily: tokens.font.body,
@@ -111,7 +125,12 @@ export function FloorView({ layout, units }: { layout: Layout; units: DisplayUni
     textAnchor: "middle",
     dominantBaseline: "middle",
   } as const;
-  const heading = { ...label, fill: tokens.color.text, fontWeight: 600, letterSpacing: "0.08em" } as const;
+  const heading = {
+    ...label,
+    fill: tokens.color.text,
+    fontWeight: tokens.font.weight.strong,
+    letterSpacing: tokens.font.capsSpacing,
+  } as const;
 
   return (
     <div style={{ position: "relative", height: "100%", minHeight: 0 }}>
@@ -130,35 +149,41 @@ export function FloorView({ layout, units }: { layout: Layout; units: DisplayUni
         {view && (
           <>
             <rect {...plan.outline} fill={tokens.color.truckFloor} />
-            {plan.lanes.map((lane) => (
-              <g key={lane.id}>
-                <rect {...lane.rect} fill={tokens.color.laneTape} fillOpacity={tokens.floor.laneFillOpacity} />
-                {lane.edges.map((edge, i) => (
-                  <line
-                    key={i}
-                    x1={edge.from.x}
-                    y1={edge.from.y}
-                    x2={edge.to.x}
-                    y2={edge.to.y}
-                    stroke={tokens.color.laneTape}
-                    strokeWidth={tokens.floor.tapeMm}
-                  />
-                ))}
-                <text
-                  {...label}
-                  fill={tokens.color.laneTape}
-                  x={lane.rect.x + lane.rect.width / 2}
-                  y={lane.rect.y + lane.rect.height / 2}
-                  transform={
-                    lane.direction === "crosswise"
-                      ? `rotate(-90 ${lane.rect.x + lane.rect.width / 2} ${lane.rect.y + lane.rect.height / 2})`
-                      : undefined
-                  }
-                >
-                  Lane · {lane.widthLabel}
-                </text>
-              </g>
-            ))}
+            {plan.lanes.map((lane) => {
+              const mid = centre(lane.rect);
+              const clipId = `lane-clip-${lane.id}`;
+              return (
+                <g key={lane.id}>
+                  <clipPath id={clipId}>
+                    <rect {...lane.rect} />
+                  </clipPath>
+                  <rect {...lane.rect} fill={tokens.color.laneTape} fillOpacity={tokens.floor.laneFillOpacity} />
+                  {/* Tape is laid inside the lane, so the drawn strip is exactly the lane's width. */}
+                  <g clipPath={`url(#${clipId})`}>
+                    {lane.edges.map((edge, i) => (
+                      <line
+                        key={i}
+                        x1={edge.from.x}
+                        y1={edge.from.y}
+                        x2={edge.to.x}
+                        y2={edge.to.y}
+                        stroke={tokens.color.laneTape}
+                        strokeWidth={tokens.floor.tapeMm * 2}
+                      />
+                    ))}
+                  </g>
+                  <text
+                    {...label}
+                    fill={tokens.color.laneTape}
+                    x={mid.x}
+                    y={mid.y}
+                    transform={lane.direction === "crosswise" ? `rotate(-90 ${mid.x} ${mid.y})` : undefined}
+                  >
+                    Lane · {lane.widthLabel}
+                  </text>
+                </g>
+              );
+            })}
             <rect
               {...plan.outline}
               fill="none"
@@ -166,32 +191,46 @@ export function FloorView({ layout, units }: { layout: Layout; units: DisplayUni
               strokeWidth={tokens.floor.wallStrokePx}
               vectorEffect="non-scaling-stroke"
             />
-            <text {...heading} x={-gap} y={W / 2} transform={`rotate(-90 ${-gap} ${W / 2})`}>
+            <text {...heading} {...nose} transform={`rotate(-90 ${nose.x} ${nose.y})`}>
               NOSE
             </text>
-            <text {...heading} x={L + gap} y={W / 2} transform={`rotate(90 ${L + gap} ${W / 2})`}>
+            <text {...heading} {...doors} transform={`rotate(90 ${doors.x} ${doors.y})`}>
               DOORS
             </text>
-            <text {...label} x={L + gap + 1.6 * font} y={W / 2} transform={`rotate(90 ${L + gap + 1.6 * font} ${W / 2})`}>
+            <text {...label} {...widthLabelAt} transform={`rotate(90 ${widthLabelAt.x} ${widthLabelAt.y})`}>
               {plan.widthLabel} wide
             </text>
-            <text {...label} x={L / 2} y={W + gap} dominantBaseline="hanging">
+            <text {...label} x={truckLength / 2} y={truckWidth + gap} dominantBaseline="hanging">
               Left wall · {plan.lengthLabel} long
             </text>
-            <text {...label} x={L / 2} y={-gap} dominantBaseline="auto">
+            <text {...label} x={truckLength / 2} y={-gap} dominantBaseline="auto">
               Right wall
             </text>
           </>
         )}
       </svg>
-      <div style={{ position: "absolute", right: tokens.space.s, bottom: tokens.space.s, display: "flex", gap: tokens.space.xs }}>
+      <div
+        style={{
+          position: "absolute",
+          left: tokens.space.s,
+          right: tokens.space.s,
+          bottom: tokens.space.s,
+          display: "flex",
+          alignItems: "center",
+          gap: tokens.space.xs,
+          pointerEvents: "none",
+        }}
+      >
+        <span style={{ marginRight: "auto", color: tokens.color.textMuted, fontSize: tokens.font.size.small }}>
+          Scroll or drag to pan · pinch or Ctrl/⌘ + scroll to zoom
+        </span>
         <ViewButton label="Zoom out" onClick={() => zoomCentre(1 / ZOOM_STEP)}>
           −
         </ViewButton>
         <ViewButton label="Zoom in" onClick={() => zoomCentre(ZOOM_STEP)}>
           +
         </ViewButton>
-        <ViewButton label="Fit truck" onClick={() => size && fit(size)}>
+        <ViewButton label="Fit truck" onClick={() => size && setView(fitted(size))}>
           Fit
         </ViewButton>
       </div>
@@ -207,7 +246,8 @@ function ViewButton({ label, onClick, children }: { label: string; onClick: () =
       title={label}
       onClick={onClick}
       style={{
-        minWidth: "32px",
+        pointerEvents: "auto",
+        minWidth: tokens.controlMinPx,
         padding: `${tokens.space.xs} ${tokens.space.s}`,
         background: tokens.color.panel,
         color: tokens.color.text,

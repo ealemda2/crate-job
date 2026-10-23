@@ -50,6 +50,6 @@ describe("floorPlan", () => {
 
   it("labels every measurement in the chosen units", () => {
     const plan = floorPlan(defaultLayout(), "metric");
-    expect([plan.lengthLabel, plan.widthLabel, plan.lanes[0]?.widthLabel]).toEqual(["7925 mm", "2438 mm", "610 mm"]);
+    expect([plan.lengthLabel, plan.widthLabel, plan.lanes[0]?.widthLabel]).toEqual(["7,925 mm", "2,438 mm", "610 mm"]);
   });
 });

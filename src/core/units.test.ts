@@ -16,8 +16,9 @@ describe("formatLengthAs", () => {
     expect(formatLengthAs(300, "ft-in")).toBe("1' 0\"");
   });
 
-  it("shows whole millimetres", () => {
-    expect(formatLengthAs(7925, "mm")).toBe("7925 mm");
+  it("shows whole millimetres with thousands separators", () => {
+    expect(formatLengthAs(7925, "mm")).toBe("7,925 mm");
+    expect(formatLengthAs(610, "mm")).toBe("610 mm");
   });
 
   it("shows centimetres to one decimal, dropping a trailing .0", () => {
@@ -47,7 +48,7 @@ describe("formatLength and formatWeight", () => {
   });
 
   it("use millimetres and kilograms for metric", () => {
-    expect(formatLength(7925, "metric")).toBe("7925 mm");
+    expect(formatLength(7925, "metric")).toBe("7,925 mm");
     expect(formatWeight(4_500_000, "metric")).toBe("4,500 kg");
   });
 });

@@ -24,6 +24,9 @@ export const tokens = {
     body: "system-ui, -apple-system, 'Segoe UI', sans-serif",
     mono: "ui-monospace, 'SF Mono', Menlo, monospace",
     size: { small: "12px", body: "14px", heading: "18px" },
+    weight: { strong: 600 },
+    /** Letter spacing for short all-caps labels such as NOSE and DOORS. */
+    capsSpacing: "0.08em",
   },
   space: { xs: "4px", s: "8px", m: "12px", l: "16px", xl: "24px" },
   /** Floor view drawing. Millimetre values are true to scale; pixel values stay the same size at any zoom. */
@@ -35,8 +38,12 @@ export const tokens = {
     laneFillOpacity: 0.12,
     wallStrokePx: 2,
     labelPx: 12,
+    /** Distance between two stacked labels, in label heights. */
+    labelStack: 1.6,
     /** Gap between the truck outline and its labels. */
     labelGapPx: 16,
   },
   radius: "6px",
+  /** Smallest width of a button, so a one-character button is still easy to hit. */
+  controlMinPx: "32px",
 } as const;

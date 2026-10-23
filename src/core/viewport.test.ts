@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitView, panBy, toPlanPoint, withAspect, zoomAt } from "./viewport";
+import { fitView, panBy, panByPixels, toPlanPoint, wheelPixels, wheelZoomFactor, withAspect, zoomAt } from "./viewport";
 
 const truck = { x: 0, y: 0, width: 8000, height: 2000 };
 
@@ -46,5 +46,37 @@ describe("toPlanPoint", () => {
 describe("withAspect", () => {
   it("keeps the view's centre and width when the panel changes shape", () => {
     expect(withAspect({ x: 0, y: 0, width: 4000, height: 2000 }, 4)).toEqual({ x: 0, y: 500, width: 4000, height: 1000 });
+  });
+});
+
+describe("panByPixels", () => {
+  it("drags the floor with the pointer: moving right by 100 px shows floor further toward the nose", () => {
+    // 800 px panel showing 8000 mm: 10 mm per pixel.
+    expect(panByPixels({ x: 0, y: 0, width: 8000, height: 4000 }, { x: 100, y: -50 }, { width: 800, height: 400 })).toEqual({
+      x: -1000,
+      y: 500,
+      width: 8000,
+      height: 4000,
+    });
+  });
+});
+
+describe("wheelZoomFactor", () => {
+  it("zooms gently for small pinch deltas, in for negative and out for positive", () => {
+    expect(wheelZoomFactor(-10)).toBeCloseTo(1.105, 3);
+    expect(wheelZoomFactor(10)).toBeCloseTo(1 / 1.105, 3);
+  });
+
+  it("caps one mouse-wheel notch at a 1.25× step", () => {
+    expect(wheelZoomFactor(-100)).toBe(1.25);
+    expect(wheelZoomFactor(100)).toBe(1 / 1.25);
+  });
+});
+
+describe("wheelPixels", () => {
+  it("turns line and page wheel deltas into pixels so a mouse wheel moves as far as a trackpad", () => {
+    expect(wheelPixels(3, "pixel", 600)).toBe(3);
+    expect(wheelPixels(3, "line", 600)).toBe(48);
+    expect(wheelPixels(1, "page", 600)).toBe(600);
   });
 });
