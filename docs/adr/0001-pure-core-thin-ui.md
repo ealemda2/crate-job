@@ -1,0 +1,3 @@
+# Pure core, thin UI
+
+All domain logic (data model, units, snapping, rules, unload order, export content) lives in `src/core/` as plain TypeScript with no React, DOM or three.js imports. Components render core state and dispatch commands; `dispatch(command)` returns a new immutable project, and undo/redo is a stack of those states. This puts everything worth testing behind pure functions, keeps rules out of components (a brief non-negotiable), and makes the 3D view and the export just two more renderers of the same state. The cost is a little ceremony for every UI action: it must be a named command.
