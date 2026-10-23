@@ -26,5 +26,17 @@ export const tokens = {
     size: { small: "12px", body: "14px", heading: "18px" },
   },
   space: { xs: "4px", s: "8px", m: "12px", l: "16px", xl: "24px" },
+  /** Floor view drawing. Millimetre values are true to scale; pixel values stay the same size at any zoom. */
+  floor: {
+    /** Clear floor shown around the truck when the view is fitted. */
+    marginMm: 900,
+    /** Floor tape is 2 in wide, drawn along both edges of a lane. */
+    tapeMm: 51,
+    laneFillOpacity: 0.12,
+    wallStrokePx: 2,
+    labelPx: 12,
+    /** Gap between the truck outline and its labels. */
+    labelGapPx: 16,
+  },
   radius: "6px",
 } as const;
